@@ -1,39 +1,7 @@
-import prisma from '../../prisma/client';
-import { NotFoundError } from '../utils/NotFoundErrorClass';
-
-export const getUserById = async (id: string) => {
-  // const user = await db
-  //   .selectFrom('Users')
-  //   .selectAll()
-  //   .where('id', '=', id)
-  //   .execute();
-
-  // if (user.length === 0) {
-  //   throw new NotFoundError('User not found');
-  // }
-
-  const user = await prisma.user.findUnique({
-    where: {
-      id,
-    },
-  });
-
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
-
-  return user;
+export const pay = async () => {
+  // https://api.stripe.com/v1/payment_intents?amount=20000&currency=dkk&payment_method=pm_card_visa_debit&confirm=true&return_url=https://localhost:3006&customer=cus_RHam6FVtUv0Hkk&shipping[name]=Andreas Fritzbøger&shipping[address][line1]=123 Main Street&shipping[address][city]=Copenhagen&shipping[address][country]=DK
 };
 
-export async function getAllUsers() {
-  try {
-    // return await db.selectFrom('Users').selectAll().execute();
-    return await prisma.user.findMany();
-  } catch (e) {
-    console.log(e);
-  }
-}
-
-export const createUser = async (name: string, password: string) => {
-  console.log(name, password);
+export const createStripeCustomer = async () => {
+  //https://api.stripe.com/v1/customers?email=arf@live.dk&name=Andreas Fritzbøger
 };

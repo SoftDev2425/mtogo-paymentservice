@@ -1,7 +1,5 @@
 import dotenv from 'dotenv';
 import createServer from './utils/server';
-import prisma from '../prisma/client';
-import { handlePopulateDatabase } from './utils/handlePopulateDatabase';
 
 dotenv.config();
 
@@ -15,12 +13,8 @@ async function main() {
 }
 
 main()
-  .then(async () => {
-    await prisma.$connect();
-    await handlePopulateDatabase();
-  })
+  .then(async () => {})
   .catch(async e => {
     console.error(e);
-    await prisma.$disconnect();
     process.exit(1);
   });
