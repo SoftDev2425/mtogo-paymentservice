@@ -4,6 +4,10 @@ import { requireCustomer } from '../middlewares/role';
 
 const router = express.Router();
 
-router.post('/order/process', requireCustomer, paymentController.handleOrderPayment);
+router.post(
+  '/order/process',
+  requireCustomer,
+  paymentController.handleOrderPayment,
+);
 
 export default router;
