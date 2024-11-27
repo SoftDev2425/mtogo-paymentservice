@@ -10,4 +10,9 @@ router.post(
   paymentController.handleOrderPayment,
 );
 
+// router.post('/order/process', (req: Request, res: Response) => {
+//   console.log('Received data:', req.body); // This should now log the correct data
+//   res.status(200).send({ success: true });
+// });
+
 export default router;
