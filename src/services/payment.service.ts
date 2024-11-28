@@ -61,8 +61,6 @@ export const pay = async (paymentData: PaymentData, email: string) => {
 
     const data = await response.json();
 
-    console.log('Payment data:', data);
-
     return data;
   } catch (error) {
     console.error(error);
