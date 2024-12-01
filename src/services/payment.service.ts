@@ -64,6 +64,7 @@ export const pay = async (paymentData: PaymentData, email: string) => {
     return data;
   } catch (error) {
     console.error(error);
+    throw error;
   }
 };
 
@@ -108,6 +109,227 @@ export const createStripeCustomer = async (
     return createData;
   } catch (error) {
     console.error('Error creating or retrieving customer:', error);
+    throw error;
+  }
+};
+
+export async function handlePayouts(event: {
+  order: {
+    id: string;
+    paymentIntentId: string;
+    totalAmount: number;
+  };
+  deliveryData: {
+    id: string;
+    deliveryTime: string;
+    deliveryAddress: string;
+    agent: {
+      id: string;
+      name: string;
+      email: string;
+      regNo: string;
+      accountNo: string;
+    };
+  };
+  restaurant: {
+    restaurant: {
+      id: string;
+      email: string;
+      regNo: string;
+      accountNo: string;
+    };
+  };
+}) {
+  // process payouts
+  const { totalAmount } = event.order;
+
+  // Constants for fees
+  const stripeFeePercentage = 0.015; // 1.5%
+  const stripeFlatFee = 1.8; // fixed Stripe fee in DKK
+  const mtogoFeePercentage = 0.015; // 1.5% MTOGO fee
+
+  // Calculating MTOGO net revenue after Stripe fees
+  const afterStripeFees =
+    totalAmount - totalAmount * stripeFeePercentage - stripeFlatFee;
+  const afterMtogoFees = afterStripeFees - afterStripeFees * mtogoFeePercentage;
+
+  // Calculate restaurant payout
+  let variableSharePercentage = 0;
+  if (totalAmount < 100) {
+    variableSharePercentage = 0.08;
+  } else if (totalAmount <= 500) {
+    variableSharePercentage = 0.06;
+  } else if (totalAmount <= 1000) {
+    variableSharePercentage = 0.04;
+  } else {
+    variableSharePercentage = 0.03;
+  }
+
+  const restaurantPayout =
+    afterMtogoFees - afterMtogoFees * variableSharePercentage;
+
+  // Simpler delivery agent payout for now
+  const baseDeliveryFee = 30;
+  const deliveryAgentBonusPercentage = 0.1; // bonus percentage for prime hours
+  const deliveryHour = new Date(event.deliveryData.deliveryTime).getHours();
+  const isPrimeHours = deliveryHour >= 17 && deliveryHour <= 21;
+
+  const deliveryAgentPayout =
+    baseDeliveryFee +
+    (isPrimeHours ? baseDeliveryFee * deliveryAgentBonusPercentage : 0);
+
+  // PERFORM PAYOUTS TO RESTAURANT AND DELIVERY AGENT
+
+  // Retrieve or create Stripe Connect accounts for restaurant and delivery agent
+  const restaurant_StripeCustomer =
+    await createRestaurantOrDeliveryAgentInStripe(
+      event.restaurant.restaurant.email,
+      event.restaurant.restaurant.regNo,
+      event.restaurant.restaurant.accountNo,
+    );
+
+  if (!restaurant_StripeCustomer) {
+    throw new Error('Failed to create or retrieve restaurant Stripe customer');
+  }
+
+  const deliveryAgent_StripeCustomer =
+    await createRestaurantOrDeliveryAgentInStripe(
+      event.deliveryData.agent.email,
+      event.deliveryData.agent.regNo,
+      event.deliveryData.agent.accountNo,
+    );
+
+  if (!deliveryAgent_StripeCustomer) {
+    throw new Error(
+      'Failed to create or retrieve delivery agent Stripe customer',
+    );
+  }
+
+  // Perform payouts
+  await performPayout(
+    restaurant_StripeCustomer.id,
+    restaurantPayout,
+    'Restaurant Payout',
+  );
+
+  await performPayout(
+    deliveryAgent_StripeCustomer.id,
+    deliveryAgentPayout,
+    'Delivery Agent Payout',
+  );
+
+  return {
+    restaurantPayout,
+    deliveryAgentPayout,
+  };
+}
+
+async function performPayout(
+  accountId: string,
+  amount: number,
+  description: string,
+) {
+  try {
+    const response = await fetch('https://api.stripe.com/v1/transfers', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        amount: (amount * 100).toString(),
+        currency: 'dkk',
+        destination: accountId,
+        description,
+      }).toString(),
+    });
+
+    const data = await response.json();
+
+    console.log('Payout response:', data);
+
+    // TODO - fix this to actually simulate a payment
+
+    return data;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+type StripeAccount = {
+  id: string;
+};
+
+const createRestaurantOrDeliveryAgentInStripe = async (
+  email: string,
+  regNo: string,
+  accountNo: string,
+): Promise<StripeAccount | null> => {
+  try {
+    console.log(
+      'createRestaurantOrDeliveryAgentInStripe()',
+      email,
+      regNo,
+      accountNo,
+    );
+
+    // Search for existing Connect account
+    const searchResponse = await fetch(
+      `https://api.stripe.com/v1/accounts?email=${encodeURIComponent(email)}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+        },
+      },
+    );
+
+    const searchData = (await searchResponse.json()) as {
+      data: StripeAccount[];
+    };
+
+    if (searchData.data && searchData.data.length > 0) {
+      console.log('Stripe account already exists:', searchData.data[0]);
+      return searchData.data[0]; // Return existing account
+    }
+
+    // Create a new Connect account
+    const createResponse = await fetch('https://api.stripe.com/v1/accounts', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        type: 'custom',
+        email,
+        country: 'DK',
+        business_type: 'individual',
+        'individual[first_name]': 'John',
+        'individual[last_name]': 'Doe',
+        'external_account[object]': 'bank_account',
+        'external_account[country]': 'DK',
+        'external_account[currency]': 'dkk',
+        'external_account[account_number]': 'DK5000400440116243',
+        'external_account[registration_number]': regNo,
+        'capabilities[transfers][requested]': 'true',
+      }).toString(),
+    });
+
+    const accountData = await createResponse.json();
+
+    if (!createResponse.ok) {
+      console.error(
+        'Error creating Stripe Connect account:',
+        createResponse.statusText,
+      );
+      return null;
+    }
+
+    console.log('Stripe Connect account created:', accountData);
+    return accountData as StripeAccount;
+  } catch (error) {
+    console.error('Error creating Stripe Connect account:', error);
     throw error;
   }
 };

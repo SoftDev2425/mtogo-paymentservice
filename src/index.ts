@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
 import createServer from './utils/server';
+import startConsumers from './kafka/app';
+import { initializeProducer } from './utils/produceEvent';
 
 dotenv.config();
 
@@ -13,7 +15,10 @@ async function main() {
 }
 
 main()
-  .then(async () => {})
+  .then(async () => {
+    await startConsumers();
+    await initializeProducer();
+  })
   .catch(async e => {
     console.error(e);
     process.exit(1);
