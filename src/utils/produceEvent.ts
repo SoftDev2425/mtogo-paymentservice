@@ -5,7 +5,7 @@ dotenv.config();
 
 let producer: Producer;
 
-async function initializeProducer() {
+async function initializeProducer(retries = 5, delay = 3000) {
   const kafka = new Kafka({
     clientId: 'restaurant-order-service',
     brokers: [process.env.KAFKA_BROKER || 'kafka:9092'],
@@ -13,10 +13,22 @@ async function initializeProducer() {
 
   producer = kafka.producer();
 
-  producer.connect().catch(error => {
-    console.error('Error connecting to Kafka producer:', error);
-    process.exit(1);
-  });
+  for (let i = 0; i < retries; i++) {
+    try {
+      await producer.connect();
+      console.log('Kafka producer connected');
+      return;
+    } catch (error) {
+      console.error(
+        `Retrying Kafka producer connection (${i + 1}/${retries}):`,
+        error,
+      );
+      if (i === retries - 1) {
+        throw new Error('Kafka producer failed to connect after retries');
+      }
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
 }
 
 async function produceEvent(topic: string, message: Record<string, unknown>) {
@@ -48,5 +60,17 @@ async function shutdownProducer() {
     console.log('Producer disconnected');
   }
 }
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received. Shutting down producer...');
+  await shutdownProducer();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received. Shutting down producer...');
+  await shutdownProducer();
+  process.exit(0);
+});
 
 export { initializeProducer, produceEvent, shutdownProducer };
